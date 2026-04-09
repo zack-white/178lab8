@@ -14,15 +14,9 @@ const randomizeBtn = document.getElementById("randomize");
 const PLOT = {width: 760, height: 620, margin: 40};
 svg.attr("viewBox", `0 0 ${PLOT.width} ${PLOT.height}`);
 
-const colorScale = d3.scaleOrdinal(d3.schemeTableau10);
-
-let mockState = {
+let state = {
   step: 0,
-  data: [],
-  assignments: [],
   centroids: [],
-  running: false,
-  runTimer: null,
 };
 
 init();
@@ -30,74 +24,76 @@ init();
 function init() {
   wireEvents();
   refreshCentroidInputs();
-  loadAndRender();
+  renderEmptyPlot();
+  initSession();
 }
 
 function wireEvents() {
-  datasetEl.addEventListener("change", () => {
-    mockState.step = 0;
-    stepEl.textContent = String(mockState.step);
+  datasetEl.addEventListener("change", async () => {
+    state.step = 0;
+    stepEl.textContent = String(state.step);
     refreshCentroidInputs();
-    loadAndRender();
+    await initSession();
   });
 
-  nClustersEl.addEventListener("change", () => {
-    mockState.step = 0;
-    stepEl.textContent = String(mockState.step);
+  nClustersEl.addEventListener("change", async () => {
+    state.step = 0;
+    stepEl.textContent = String(state.step);
     refreshCentroidInputs();
-    assignLabelsRoundRobin();
-    renderPlot();
+    await initSession();
   });
 
-  randomizeBtn.addEventListener("click", () => {
-    randomizeCentroids();
-    pullCentroidsIntoInputs();
-    renderPlot();
-    setStatus("Centroids randomized (mock).");
+  randomizeBtn.addEventListener("click", async () => {
+    const payload = buildPayload();
+    await callApi("/api/randomize", payload, "Randomize request sent.");
   });
 
-  forwardBtn.addEventListener("click", () => {
-    stepMockForward();
+  forwardBtn.addEventListener("click", async () => {
+    const payload = buildPayload();
+    const result = await callApi("/api/step", payload, "Step request sent.");
+    if (result?.step !== undefined) {
+      state.step = Number(result.step) || state.step + 1;
+    } else {
+      state.step += 1;
+    }
+    stepEl.textContent = String(state.step);
   });
 
-  backBtn.addEventListener("click", () => {
-    if (mockState.step > 0) {
-      mockState.step -= 1;
-      stepEl.textContent = String(mockState.step);
-      assignLabelsRoundRobin();
-      renderPlot();
-      setStatus("Moved back one step (mock).");
+  backBtn.addEventListener("click", async () => {
+    const payload = buildPayload();
+    const result = await callApi("/api/back", payload, "Back request sent.");
+    if (result?.step !== undefined) {
+      state.step = Math.max(0, Number(result.step) || 0);
+    } else {
+      state.step = Math.max(0, state.step - 1);
+    }
+    stepEl.textContent = String(state.step);
+  });
+
+  runBtn.addEventListener("click", async () => {
+    const payload = buildPayload();
+    const result = await callApi("/api/run", payload, "Run request sent.");
+    if (result?.step !== undefined) {
+      state.step = Number(result.step) || state.step;
+      stepEl.textContent = String(state.step);
     }
   });
 
-  runBtn.addEventListener("click", () => {
-    if (mockState.running) {
-      stopRunLoop("Paused run.");
-      return;
-    }
-    startRunLoop();
-  });
-
-  resetBtn.addEventListener("click", () => {
-    stopRunLoop();
-    mockState.step = 0;
+  resetBtn.addEventListener("click", async () => {
+    const payload = buildPayload();
+    await callApi("/api/reset", payload, "Reset request sent.");
+    state.step = 0;
     stepEl.textContent = "0";
+    state.centroids = [];
     refreshCentroidInputs();
-    loadAndRender();
-    setStatus("Reset to step 0.");
+    renderEmptyPlot();
   });
 }
 
-function loadAndRender() {
-  const filename = datasetEl.value;
-  d3.csv(`static/datasets/${filename}`, d3.autoType).then((data) => {
-    mockState.data = data.map((d) => ({x: Number(d.x), y: Number(d.y)}));
-    randomizeCentroids();
-    assignLabelsRoundRobin();
-    pullCentroidsIntoInputs();
-    renderPlot();
-    setStatus(`Loaded ${filename}.`);
-  });
+async function initSession() {
+  state.centroids = extractCentroidsFromInputs();
+  const payload = buildPayload();
+  await callApi("/api/init", payload, "Initialized session.");
 }
 
 function getClusterCount() {
@@ -140,133 +136,76 @@ function onCentroidInputChange(event) {
   const i = Number(input.dataset.centroidIndex);
   const axis = input.dataset.axis;
   const value = Number(input.value);
-  if (!Number.isFinite(value) || !mockState.centroids[i]) return;
+  if (!Number.isFinite(value)) return;
 
-  mockState.centroids[i][axis] = value;
-  renderPlot();
-  setStatus("Centroid manually updated (mock override).");
-}
-
-function pullCentroidsIntoInputs() {
-  const inputs = centroidInputsContainer.querySelectorAll("input");
-  inputs.forEach((input) => {
-    const i = Number(input.dataset.centroidIndex);
-    const axis = input.dataset.axis;
-    const value = mockState.centroids[i]?.[axis];
-    input.value = Number.isFinite(value) ? value.toFixed(2) : "";
-  });
-}
-
-function randomizeCentroids() {
-  const k = getClusterCount();
-  if (mockState.data.length === 0) return;
-
-  const xExtent = d3.extent(mockState.data, (d) => d.x);
-  const yExtent = d3.extent(mockState.data, (d) => d.y);
-
-  mockState.centroids = d3.range(k).map(() => ({
-    x: randInRange(xExtent[0], xExtent[1]),
-    y: randInRange(yExtent[0], yExtent[1]),
-  }));
-}
-
-function randInRange(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function assignLabelsRoundRobin() {
-  const k = getClusterCount();
-  mockState.assignments = mockState.data.map((_, i) => (i + mockState.step) % k);
-}
-
-function stepMockForward() {
-  mockState.step += 1;
-  stepEl.textContent = String(mockState.step);
-  assignLabelsRoundRobin();
-
-  // Tiny centroid drift gives visible change between mock steps.
-  mockState.centroids = mockState.centroids.map((c, i) => ({
-    x: c.x + Math.cos(mockState.step + i) * 0.15,
-    y: c.y + Math.sin(mockState.step + i) * 0.15,
-  }));
-  pullCentroidsIntoInputs();
-  renderPlot();
-  setStatus("Advanced one step (mock k-means iteration).");
-}
-
-function startRunLoop() {
-  mockState.running = true;
-  runBtn.textContent = "Pause";
-  setStatus("Running mock iterations...");
-
-  let ticks = 0;
-  mockState.runTimer = window.setInterval(() => {
-    stepMockForward();
-    ticks += 1;
-    if (ticks >= 10) {
-      stopRunLoop("Reached mock convergence.");
-    }
-  }, 450);
-}
-
-function stopRunLoop(msg = "") {
-  if (mockState.runTimer) {
-    window.clearInterval(mockState.runTimer);
-    mockState.runTimer = null;
+  if (!state.centroids[i]) {
+    state.centroids[i] = {x: null, y: null};
   }
-  mockState.running = false;
-  runBtn.textContent = "Run";
-  if (msg) setStatus(msg);
+  state.centroids[i][axis] = value;
+
+  callApi(
+    "/api/centroids",
+    buildPayload(),
+    "Centroid override sent.",
+  ).catch(() => {});
 }
 
-function renderPlot() {
+function extractCentroidsFromInputs() {
+  const k = getClusterCount();
+  const centroids = [];
+  for (let i = 0; i < k; i += 1) {
+    const xInput = centroidInputsContainer.querySelector(
+      `input[data-centroid-index="${i}"][data-axis="x"]`,
+    );
+    const yInput = centroidInputsContainer.querySelector(
+      `input[data-centroid-index="${i}"][data-axis="y"]`,
+    );
+    centroids.push({
+      x: Number.isFinite(Number(xInput?.value)) ? Number(xInput.value) : null,
+      y: Number.isFinite(Number(yInput?.value)) ? Number(yInput.value) : null,
+    });
+  }
+  return centroids;
+}
+
+function buildPayload() {
+  return {
+    dataset: datasetEl.value,
+    n_clusters: getClusterCount(),
+    step: state.step,
+    centroids: extractCentroidsFromInputs(),
+  };
+}
+
+function renderEmptyPlot() {
   svg.selectAll("*").remove();
-
-  if (mockState.data.length === 0) return;
-
-  const x = d3
-    .scaleLinear()
-    .domain(d3.extent(mockState.data, (d) => d.x))
-    .nice()
-    .range([PLOT.margin, PLOT.width - PLOT.margin]);
-
-  const y = d3
-    .scaleLinear()
-    .domain(d3.extent(mockState.data, (d) => d.y))
-    .nice()
-    .range([PLOT.height - PLOT.margin, PLOT.margin]);
-
   svg
-    .append("g")
-    .attr("transform", `translate(0, ${PLOT.height - PLOT.margin})`)
-    .call(d3.axisBottom(x));
+    .append("text")
+    .attr("x", PLOT.width / 2)
+    .attr("y", PLOT.height / 2)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#7a869a")
+    .attr("font-size", 14)
+    .text("No mock plot data rendered. Waiting for backend outputs.");
+}
 
-  svg
-    .append("g")
-    .attr("transform", `translate(${PLOT.margin}, 0)`)
-    .call(d3.axisLeft(y));
-
-  svg
-    .append("g")
-    .selectAll("circle")
-    .data(mockState.data)
-    .join("circle")
-    .attr("cx", (d) => x(d.x))
-    .attr("cy", (d) => y(d.y))
-    .attr("r", 4.5)
-    .attr("fill", (_, i) => colorScale(mockState.assignments[i]))
-    .attr("opacity", 0.85);
-
-  svg
-    .append("g")
-    .selectAll("path")
-    .data(mockState.centroids)
-    .join("path")
-    .attr("d", d3.symbol().type(d3.symbolCross).size(180))
-    .attr("transform", (d) => `translate(${x(d.x)}, ${y(d.y)})`)
-    .attr("fill", "none")
-    .attr("stroke", (_, i) => colorScale(i))
-    .attr("stroke-width", 2.2);
+async function callApi(url, payload, successMessage) {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (successMessage) setStatus(successMessage);
+    return data;
+  } catch (err) {
+    setStatus(`Request failed: ${err.message}`);
+    return null;
+  }
 }
 
 function setStatus(text) {
