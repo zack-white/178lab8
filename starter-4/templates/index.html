@@ -1,36 +1,62 @@
 <!doctype html>
 <html>
   <header>
-    <title>Kmeans</title>
+    <title>Lab 8 - K-Means Visual Analytics</title>
     <link rel="stylesheet" type="text/css" href="static/style.css" />
     <script src="https://d3js.org/d3.v7.min.js"></script>
   </header>
   <body>
-    <div id="control">
-      <div>
-        <span>dataset</span>
-        <select id="dataset" onchange="">
-          {% for dataset in datasets %}
-          <option>{{dataset}}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <span>n_clusters</span>
-        <input type="number" id="n_clusters" value="2" min="2" max="5" onchange="" />
-      </div>
-      <div>
-        <span id="step-label">step:</span>
-        <span id="step">0</span>
-      </div>
-      <div>
-        <button id="back" onclick="">⏪</button>
-        <button id="run" onclick="">run</button>
-        <button id="forward" onclick="">⏩</button>
-        <button id="reset" onclick="">reset</button>
-      </div>
-    </div>
-    <div><svg id="scatterplot"></svg></div>
+    <main id="app">
+      <section id="control-panel">
+        <h1>K-Means Clustering Explorer</h1>
+        <p class="subtitle">
+          Mockup frontend for Lab 8. Connect the controls to your algorithm next.
+        </p>
+
+        <div class="row">
+          <label for="dataset">Dataset</label>
+          <select id="dataset">
+            {% for dataset in datasets %}
+            <option value="{{dataset}}.csv">{{dataset}}.csv</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="n_clusters">n_clusters</label>
+          <input type="number" id="n_clusters" value="2" min="2" max="8" />
+        </div>
+
+        <div class="row step-row">
+          <span id="step-label">Step</span>
+          <span id="step">0</span>
+        </div>
+
+        <div class="row button-row">
+          <button id="back" title="Go one step back">⏪ Back</button>
+          <button id="forward" title="Take one k-means step">⏩ Step</button>
+          <button id="run" title="Run until convergence">Run</button>
+          <button id="reset" title="Reset mock state">Reset</button>
+          <button id="randomize" title="Randomize centroid positions">
+            Randomize Centroids
+          </button>
+        </div>
+
+        <div id="centroid-editor">
+          <h2>Centroid Overrides</h2>
+          <p class="hint">Edit x/y for each cluster centroid.</p>
+          <div id="centroid-inputs"></div>
+        </div>
+      </section>
+
+      <section id="plot-panel">
+        <div id="plot-header">
+          <h2>Scatterplot</h2>
+          <span id="status">Ready</span>
+        </div>
+        <svg id="scatterplot" aria-label="k-means scatterplot"></svg>
+      </section>
+    </main>
     <script src="static/index.js"></script>
   </body>
 </html>

@@ -1,0 +1,154 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  color: #1d2433;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 16px;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+}
+
+#control-panel,
+#plot-panel {
+  background: #ffffff;
+  border: 1px solid #e2e7f0;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+h1,
+h2 {
+  margin: 0 0 10px;
+}
+
+h1 {
+  font-size: 1.2rem;
+}
+
+h2 {
+  font-size: 1rem;
+}
+
+.subtitle,
+.hint {
+  margin: 0 0 14px;
+  color: #5b6578;
+  font-size: 0.9rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+label {
+  width: 90px;
+  font-weight: 600;
+}
+
+select,
+input[type="number"] {
+  width: 100%;
+  border: 1px solid #c7d0e0;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.95rem;
+  background: #fff;
+}
+
+.step-row {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px dashed #c7d0e0;
+  border-radius: 8px;
+}
+
+#step {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.button-row {
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid #b8c4d8;
+  border-radius: 8px;
+  background: #eef2f9;
+  color: #182033;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+button:hover {
+  background: #e3eaf6;
+}
+
+#randomize {
+  background: #dde9ff;
+}
+
+#centroid-editor {
+  margin-top: 8px;
+  border-top: 1px solid #ecf0f6;
+  padding-top: 12px;
+}
+
+.centroid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.centroid-row span {
+  align-self: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.centroid-row input {
+  width: 100%;
+}
+
+#plot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+#status {
+  font-size: 0.9rem;
+  color: #5b6578;
+}
+
+#scatterplot {
+  width: 100%;
+  height: 620px;
+  border: 1px solid #d2daea;
+  border-radius: 10px;
+  background: #fbfdff;
+}
+
+@media (max-width: 960px) {
+  #app {
+    grid-template-columns: 1fr;
+  }
+}
