@@ -3,7 +3,6 @@ import time
 import os
 import numpy as np
 import pandas as pd
-from flask import Flask, render_template, request
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
