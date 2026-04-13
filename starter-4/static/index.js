@@ -60,8 +60,12 @@ function wireEvents() {
   });
 
   runBtn.addEventListener("click", async () => {
-    // Objective 5 handled separately; keep endpoint call for now.
-    await callApi("/api/run", buildPayload(), "Run requested.");
+    const data = await callApi("/api/run", buildPayload(), "Converged");
+    for (const stepData of data.steps) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      applyApiState({ ...data, ...stepData })
+
+    }
   });
 
   resetBtn.addEventListener("click", async () => {

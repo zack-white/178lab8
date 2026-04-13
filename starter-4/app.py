@@ -211,9 +211,48 @@ def step_back():
 
 @app.route("/api/run", methods=["POST"])
 def run_until_converged():
-    # Optional for now; keep existing endpoint behavior simple.
     payload = request.get_json(silent=True) or {}
-    return jsonify(ok=True, action="run", received=payload)
+    dataset = payload.get("dataset")
+    n_clusters = int(payload.get("n_clusters", 2))
+    if kmeans_state["points"] is None or dataset != kmeans_state["dataset"] or n_clusters != kmeans_state["n_clusters"]:
+        points = load_dataset(dataset)
+        centroids = initialize_centroids(points, n_clusters)
+        assignments = assign_clusters(points, centroids)
+        kmeans_state["dataset"] = dataset
+        kmeans_state["n_clusters"] = n_clusters
+        kmeans_state["points"] = points
+        kmeans_state["history"] = [{"step": 0, "centroids": centroids, "assignments": assignments}]
+
+    points = kmeans_state["points"]
+    n_clusters = kmeans_state["n_clusters"]
+    max_steps = 100
+    steps = []
+    converged = False
+    curr = kmeans_state["history"][-1]
+    while not converged and len(steps) < max_steps:
+        curr = kmeans_state["history"][-1]
+        current_centroids = curr["centroids"]
+        assignments = assign_clusters(points, current_centroids)
+        next_centroids = recompute_centroids(points, current_centroids, n_clusters, assignments)
+        next_assignments = assign_clusters(points, next_centroids)
+        next_step = curr["step"] + 1
+        entry = {"step": next_step, "centroids": next_centroids, "assignments": assignments}
+        kmeans_state["history"].append(entry)
+        steps.append(
+            {
+                "step": next_step,
+                "centroids": next_centroids.tolist(),
+                "assignments": assignments.tolist(),
+
+            }
+        )
+        converged = np.array_equal(assignments, next_assignments)
+    x_range, y_range = x_y_ranges(points)
+    base = history_response().get_json()
+    base["converged"] = converged
+    base["steps"] = steps
+  
+    return jsonify(base)
 
 
 @app.route("/api/reset", methods=["POST"])
