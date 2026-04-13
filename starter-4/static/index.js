@@ -11,16 +11,18 @@ const runBtn = document.getElementById("run");
 const resetBtn = document.getElementById("reset");
 const randomizeBtn = document.getElementById("randomize");
 
-const PLOT = {width: 760, height: 620, margin: 40};
+const PLOT = { width: 760, height: 620, margin: 40 };
 svg.attr("viewBox", `0 0 ${PLOT.width} ${PLOT.height}`);
-svg.attr("width", 700).attr("height", 500);
+
+const palette = d3.schemeTableau10;
 
 let state = {
   step: 0,
-  centroids: [],
   points: [],
+  centroids: [],
+  assignments: [],
   xRange: [0, 1],
-  yRange: [0, 1]
+  yRange: [0, 1],
 };
 
 init();
@@ -34,105 +36,53 @@ function init() {
 
 function wireEvents() {
   datasetEl.addEventListener("change", async () => {
-    state.step = 0;
-    stepEl.textContent = String(state.step);
-    refreshCentroidInputs();
     await initSession();
   });
 
   nClustersEl.addEventListener("change", async () => {
-    state.step = 0;
-    stepEl.textContent = String(state.step);
     refreshCentroidInputs();
     await initSession();
   });
 
   randomizeBtn.addEventListener("click", async () => {
-    const payload = buildPayload();
-    const data = await callApi("/api/randomize", payload, "Centroids randomized.")
-    state.centroids = data.centroids.map(d => ({
-      x: Number(d[0]),
-      y: Number(d[1])
-    }));
-    for (let i = 0; i < state.centroids.length; i +=1) {
-      const xInput = centroidInputsContainer.querySelector(
-        `input[data-centroid-index="${i}"][data-axis="x"]`
-      );
-      const yInput = centroidInputsContainer.querySelector(
-        `input[data-centroid-index="${i}"][data-axis="y"]`
-      );
-      if (xInput) xInput.value = state.centroids[i].x.toFixed(2);
-      if (yInput) yInput.value = state.centroids[i].y.toFixed(2);
-    }
-    drawScatterPlot(state.points, state.xRange, state.yRange);
+    const result = await callApi("/api/randomize", buildPayload(), "Centroids randomized.");
+    applyApiState(result);
   });
 
   forwardBtn.addEventListener("click", async () => {
-    const payload = buildPayload();
-    const result = await callApi("/api/step", payload, "Step request sent.");
-    if (result?.step !== undefined) {
-      state.step = Number(result.step) || state.step + 1;
-    } else {
-      state.step += 1;
-    }
-    stepEl.textContent = String(state.step);
+    const result = await callApi("/api/step", buildPayload(), "Advanced one step.");
+    applyApiState(result);
   });
 
   backBtn.addEventListener("click", async () => {
-    const payload = buildPayload();
-    const result = await callApi("/api/back", payload, "Back request sent.");
-    if (result?.step !== undefined) {
-      state.step = Math.max(0, Number(result.step) || 0);
-    } else {
-      state.step = Math.max(0, state.step - 1);
-    }
-    stepEl.textContent = String(state.step);
+    const result = await callApi("/api/back", buildPayload(), "Moved one step back.");
+    applyApiState(result);
   });
 
   runBtn.addEventListener("click", async () => {
-    const payload = buildPayload();
-    const result = await callApi("/api/run", payload, "Run request sent.");
-    if (result?.step !== undefined) {
-      state.step = Number(result.step) || state.step;
-      stepEl.textContent = String(state.step);
-    }
+    // Objective 5 handled separately; keep endpoint call for now.
+    await callApi("/api/run", buildPayload(), "Run requested.");
   });
 
   resetBtn.addEventListener("click", async () => {
-    const payload = buildPayload();
-    await callApi("/api/reset", payload, "Reset request sent.");
-    state.step = 0;
+    await callApi("/api/reset", buildPayload(), "Reset.");
+    state = {
+      step: 0,
+      points: [],
+      centroids: [],
+      assignments: [],
+      xRange: [0, 1],
+      yRange: [0, 1],
+    };
     stepEl.textContent = "0";
-    state.centroids = [];
     refreshCentroidInputs();
     renderEmptyPlot();
   });
 }
 
 async function initSession() {
-  const datasetRaw = document.getElementById("dataset").value;
-  const dataset = datasetRaw.endsWith(".csv")
-    ? datasetRaw.replace(".csv", "")
-    : datasetRaw;
-  const response = await fetch("/api/init", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ dataset: dataset})
-  });
-  const data = await response.json();
-  if (!data.ok) {
-    console.error(data.error);
-    return;
-  }
-  state.points = data.points.map(d => [Number(d[0]), Number(d[1])]);
-  state.xRange = data.x_range;
-  state.yRange = data.y_range;
-  drawScatterPlot(data.points, data.x_range, data.y_range);
-  //state.centroids = extractCentroidsFromInputs();
-  //const payload = buildPayload();
-  //await callApi("/api/init", payload, "Initialized session.");
+  const result = await callApi("/api/init", buildPayload(), "Initialized session.");
+  applyApiState(result);
 }
 
 function getClusterCount() {
@@ -170,51 +120,89 @@ function refreshCentroidInputs() {
   }
 }
 
-function onCentroidInputChange(event) {
-  const input = event.target;
-  const i = Number(input.dataset.centroidIndex);
-  const axis = input.dataset.axis;
-  const value = Number(input.value);
-  if (!Number.isFinite(value)) return;
-
-  if (!state.centroids[i]) {
-    state.centroids[i] = {x: null, y: null};
+async function onCentroidInputChange() {
+  // Only send when all centroid values are present.
+  const centroids = extractCentroidsFromInputs();
+  if (centroids.some((c) => c.x === null || c.y === null)) {
+    return;
   }
-  state.centroids[i][axis] = value;
-  drawScatterPlot(state.points, state.xRange, state.yRange);
 
-  callApi(
-    "/api/centroids",
-    buildPayload(),
-    "Centroid override sent.",
-  ).catch(() => {});
+  const result = await callApi("/api/centroids", buildPayload(), "Applied manual centroids.");
+  applyApiState(result);
 }
 
 function extractCentroidsFromInputs() {
   const k = getClusterCount();
   const centroids = [];
+
   for (let i = 0; i < k; i += 1) {
     const xInput = centroidInputsContainer.querySelector(
-      `input[data-centroid-index="${i}"][data-axis="x"]`,
+      `input[data-centroid-index="${i}"][data-axis="x"]`
     );
     const yInput = centroidInputsContainer.querySelector(
-      `input[data-centroid-index="${i}"][data-axis="y"]`,
+      `input[data-centroid-index="${i}"][data-axis="y"]`
     );
+
     centroids.push({
       x: Number.isFinite(Number(xInput?.value)) ? Number(xInput.value) : null,
       y: Number.isFinite(Number(yInput?.value)) ? Number(yInput.value) : null,
     });
   }
+
   return centroids;
+}
+
+function syncCentroidInputsFromState() {
+  for (let i = 0; i < getClusterCount(); i += 1) {
+    const c = state.centroids[i];
+    const xInput = centroidInputsContainer.querySelector(
+      `input[data-centroid-index="${i}"][data-axis="x"]`
+    );
+    const yInput = centroidInputsContainer.querySelector(
+      `input[data-centroid-index="${i}"][data-axis="y"]`
+    );
+
+    if (!xInput || !yInput) continue;
+
+    xInput.value = c ? Number(c.x).toFixed(2) : "";
+    yInput.value = c ? Number(c.y).toFixed(2) : "";
+  }
 }
 
 function buildPayload() {
   return {
     dataset: datasetEl.value.replace(".csv", ""),
     n_clusters: getClusterCount(),
-    step: state.step,
     centroids: extractCentroidsFromInputs(),
+    step: state.step,
   };
+}
+
+function applyApiState(data) {
+  if (!data || !data.ok) return;
+
+  if (data.step !== undefined) {
+    state.step = Number(data.step) || 0;
+    stepEl.textContent = String(state.step);
+  }
+
+  if (Array.isArray(data.points)) {
+    state.points = data.points.map((d) => [Number(d[0]), Number(d[1])]);
+  }
+
+  if (Array.isArray(data.centroids)) {
+    state.centroids = data.centroids.map((d) => ({ x: Number(d[0]), y: Number(d[1]) }));
+  }
+
+  if (Array.isArray(data.assignments)) {
+    state.assignments = data.assignments.map((x) => Number(x));
+  }
+
+  if (Array.isArray(data.x_range)) state.xRange = data.x_range;
+  if (Array.isArray(data.y_range)) state.yRange = data.y_range;
+
+  syncCentroidInputsFromState();
+  drawScatterPlot();
 }
 
 function renderEmptyPlot() {
@@ -226,20 +214,23 @@ function renderEmptyPlot() {
     .attr("text-anchor", "middle")
     .attr("fill", "#7a869a")
     .attr("font-size", 14)
-    .text("No mock plot data rendered. Waiting for backend outputs.");
+    .text("No plot data yet.");
 }
 
 async function callApi(url, payload, successMessage) {
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+
     const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+
     if (successMessage) setStatus(successMessage);
     return data;
   } catch (err) {
@@ -252,46 +243,65 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function drawScatterPlot(points, xRange, yRange) {
+function drawScatterPlot() {
+  if (!state.points.length) {
+    renderEmptyPlot();
+    return;
+  }
+
   svg.selectAll("*").remove();
-  const width = 700;
-  const height = 500;
-  const margin = { top: 20, right: 20, bottom: 50, left: 60 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const xScale = d3.scaleLinear()
-    .domain(xRange)
-    .range([margin.left, margin.left + plotWidth]);
 
-  const yScale = d3.scaleLinear()
-    .domain(yRange)
-    .range([margin.top + plotHeight, margin.top]);
+  const width = PLOT.width;
+  const height = PLOT.height;
+  const margin = { top: 24, right: 24, bottom: 48, left: 60 };
 
-  svg.append("g")
-    .attr("transform", `translate(0, ${margin.top + plotHeight})`)
+  const xScale = d3
+    .scaleLinear()
+    .domain(state.xRange)
+    .range([margin.left, width - margin.right]);
+
+  const yScale = d3
+    .scaleLinear()
+    .domain(state.yRange)
+    .range([height - margin.bottom, margin.top]);
+
+  svg
+    .append("g")
+    .attr("transform", `translate(0, ${height - margin.bottom})`)
     .call(d3.axisBottom(xScale));
 
-  svg.append("g")
+  svg
+    .append("g")
     .attr("transform", `translate(${margin.left}, 0)`)
     .call(d3.axisLeft(yScale));
 
-  svg.append("g")
+  const pointData = state.points.map((p, i) => ({
+    x: p[0],
+    y: p[1],
+    cluster: state.assignments[i] ?? -1,
+  }));
+
+  svg
+    .append("g")
     .selectAll("circle")
-    .data(points)
+    .data(pointData)
     .enter()
     .append("circle")
-    .attr("cx", d => xScale(d[0]))
-    .attr("cy", d => yScale(d[1]))
-    .attr("r", 4);
+    .attr("cx", (d) => xScale(d.x))
+    .attr("cy", (d) => yScale(d.y))
+    .attr("r", 4)
+    .attr("fill", (d) => (d.cluster >= 0 ? palette[d.cluster % palette.length] : "#64748b"))
+    .attr("opacity", 0.85);
 
-  svg.append("g")
+  svg
+    .append("g")
     .selectAll("centroid")
-    .data(state.centroids.filter(c => c.x !== null && c.y !== null))
+    .data(state.centroids)
     .enter()
-    .append("circle")
-    .attr("cx", d => xScale(d.x))
-    .attr("cy", d => yScale(d.y))
-    .attr("r", 10)
-    .attr("fill", "blue")
-
+    .append("path")
+    .attr("d", d3.symbol().type(d3.symbolCross).size(180))
+    .attr("transform", (d) => `translate(${xScale(d.x)}, ${yScale(d.y)})`)
+    .attr("fill", (d, i) => palette[i % palette.length])
+    .attr("stroke", "#111")
+    .attr("stroke-width", 0.7);
 }
