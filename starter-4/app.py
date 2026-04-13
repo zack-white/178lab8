@@ -14,13 +14,17 @@ def load_dataset(name):
     df = pd.read_csv(path)
     return df[["x", "y"]].to_numpy()
 
+def initialize_centroids(points, n_clusters):
+    indices = np.random.choice(len(points), size=n_clusters, replace=False)
+    return points[indices]
+
 def assign_clusters(points, centroids):
     # calculate distances of each point from eahc centroid
     distances = np.linalg.norm(points[:, np.newaxis] - centroids, axis=2)
     # return the centroid that minimizes distance for each point
     return np.argmin(distances, axis=1)
 
-def update_centroids(points, old_centroids, n, assignments):
+def recompute_centroids(points, old_centroids, n, assignments):
     new_centroids = []
     #for i in range(n):
 
@@ -58,7 +62,13 @@ def init_kmeans():
 @app.route("/api/randomize", methods=["POST"])
 def randomize_centroids():
     payload = request.get_json(silent=True) or {}
-    return jsonify(ok=True, action="randomize", received=payload)
+    dataset = payload.get("dataset")
+    n_clusters = int(payload.get("n_clusters"))
+    points = load_dataset(dataset)
+    centroids = initialize_centroids(points, n_clusters)
+    return jsonify(ok=True, 
+                   centroids=centroids.tolist())
+                   #action="randomize", received=payload)
 
 
 @app.route("/api/centroids", methods=["POST"])

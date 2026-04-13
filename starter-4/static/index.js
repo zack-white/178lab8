@@ -49,7 +49,22 @@ function wireEvents() {
 
   randomizeBtn.addEventListener("click", async () => {
     const payload = buildPayload();
-    await callApi("/api/randomize", payload, "Randomize request sent.");
+    const data = await callApi("/api/randomize", payload, "Centroids randomized.")
+    state.centroids = data.centroids.map(d => ({
+      x: Number(d[0]),
+      y: Number(d[1])
+    }));
+    for (let i = 0; i < state.centroids.length; i +=1) {
+      const xInput = centroidInputsContainer.querySelector(
+        `input[data-centroid-index="${i}"][data-axis="x"]`
+      );
+      const yInput = centroidInputsContainer.querySelector(
+        `input[data-centroid-index="${i}"][data-axis="y"]`
+      );
+      if (xInput) xInput.value = state.centroids[i].x.toFixed(2);
+      if (yInput) yInput.value = state.centroids[i].y.toFixed(2);
+    }
+    drawScatterPlot(state.points, state.xRange, state.yRange);
   });
 
   forwardBtn.addEventListener("click", async () => {
@@ -111,6 +126,9 @@ async function initSession() {
     console.error(data.error);
     return;
   }
+  state.points = data.points.map(d => [Number(d[0]), Number(d[1])]);
+  state.xRange = data.x_range;
+  state.yRange = data.y_range;
   drawScatterPlot(data.points, data.x_range, data.y_range);
   //state.centroids = extractCentroidsFromInputs();
   //const payload = buildPayload();
@@ -163,6 +181,7 @@ function onCentroidInputChange(event) {
     state.centroids[i] = {x: null, y: null};
   }
   state.centroids[i][axis] = value;
+  drawScatterPlot(state.points, state.xRange, state.yRange);
 
   callApi(
     "/api/centroids",
@@ -264,5 +283,15 @@ function drawScatterPlot(points, xRange, yRange) {
     .attr("cx", d => xScale(d[0]))
     .attr("cy", d => yScale(d[1]))
     .attr("r", 4);
+
+  svg.append("g")
+    .selectAll("centroid")
+    .data(state.centroids.filter(c => c.x !== null && c.y !== null))
+    .enter()
+    .append("circle")
+    .attr("cx", d => xScale(d.x))
+    .attr("cy", d => yScale(d.y))
+    .attr("r", 10)
+    .attr("fill", "blue")
 
 }
