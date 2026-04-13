@@ -13,10 +13,14 @@ const randomizeBtn = document.getElementById("randomize");
 
 const PLOT = {width: 760, height: 620, margin: 40};
 svg.attr("viewBox", `0 0 ${PLOT.width} ${PLOT.height}`);
+svg.attr("width", 700).attr("height", 500);
 
 let state = {
   step: 0,
   centroids: [],
+  points: [],
+  xRange: [0, 1],
+  yRange: [0, 1]
 };
 
 init();
@@ -91,9 +95,26 @@ function wireEvents() {
 }
 
 async function initSession() {
-  state.centroids = extractCentroidsFromInputs();
-  const payload = buildPayload();
-  await callApi("/api/init", payload, "Initialized session.");
+  const datasetRaw = document.getElementById("dataset").value;
+  const dataset = datasetRaw.endsWith(".csv")
+    ? datasetRaw.replace(".csv", "")
+    : datasetRaw;
+  const response = await fetch("/api/init", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ dataset: dataset})
+  });
+  const data = await response.json();
+  if (!data.ok) {
+    console.error(data.error);
+    return;
+  }
+  drawScatterPlot(data.points, data.x_range, data.y_range);
+  //state.centroids = extractCentroidsFromInputs();
+  //const payload = buildPayload();
+  //await callApi("/api/init", payload, "Initialized session.");
 }
 
 function getClusterCount() {
@@ -170,7 +191,7 @@ function extractCentroidsFromInputs() {
 
 function buildPayload() {
   return {
-    dataset: datasetEl.value,
+    dataset: datasetEl.value.replace(".csv", ""),
     n_clusters: getClusterCount(),
     step: state.step,
     centroids: extractCentroidsFromInputs(),
@@ -210,4 +231,38 @@ async function callApi(url, payload, successMessage) {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function drawScatterPlot(points, xRange, yRange) {
+  svg.selectAll("*").remove();
+  const width = 700;
+  const height = 500;
+  const margin = { top: 20, right: 20, bottom: 50, left: 60 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const xScale = d3.scaleLinear()
+    .domain(xRange)
+    .range([margin.left, margin.left + plotWidth]);
+
+  const yScale = d3.scaleLinear()
+    .domain(yRange)
+    .range([margin.top + plotHeight, margin.top]);
+
+  svg.append("g")
+    .attr("transform", `translate(0, ${margin.top + plotHeight})`)
+    .call(d3.axisBottom(xScale));
+
+  svg.append("g")
+    .attr("transform", `translate(${margin.left}, 0)`)
+    .call(d3.axisLeft(yScale));
+
+  svg.append("g")
+    .selectAll("circle")
+    .data(points)
+    .enter()
+    .append("circle")
+    .attr("cx", d => xScale(d[0]))
+    .attr("cy", d => yScale(d[1]))
+    .attr("r", 4);
+
 }

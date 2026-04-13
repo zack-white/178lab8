@@ -12,7 +12,7 @@ datasets = ["blobs", "circles", "lines", "moons", "uniform"]
 def load_dataset(name):
     path = os.path.join("static","datasets", f"{name}.csv")
     df = pd.read_csv(path)
-    return df.to_numpy()
+    return df[["x", "y"]].to_numpy()
 
 def assign_clusters(points, centroids):
     # calculate distances of each point from eahc centroid
@@ -41,7 +41,18 @@ def index():
 @app.route("/api/init", methods=["POST"])
 def init_kmeans():
     payload = request.get_json(silent=True) or {}
-    return jsonify(ok=True, action="init", received=payload, step=0)
+    dataset = payload.get("dataset")
+    points = load_dataset(dataset)
+    x_min = float(points[:, 0].min())
+    x_max = float(points[:, 0].max())
+    y_min = float(points[:, 1].min())
+    y_max = float(points[:, 1].max())
+
+    return jsonify(ok=True, 
+                   points=points.tolist(),
+                   x_range=[x_min, x_max],
+                   y_range=[y_min, y_max],
+                   action="init", received=payload, step=0)
 
 
 @app.route("/api/randomize", methods=["POST"])
