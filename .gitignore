@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Environment files
+.env
+starter-4/.DS_Store
+starter-4/static/.DS_Store
+starter-4/.DS_Store
