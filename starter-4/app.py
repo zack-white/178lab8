@@ -83,6 +83,43 @@ def history_response():
     )
 
 
+def ensure_session(dataset, n_clusters):
+    if kmeans_state["points"] is not None and dataset == kmeans_state["dataset"] and n_clusters == kmeans_state["n_clusters"]:
+        return
+
+    points = load_dataset(dataset)
+    if n_clusters < 2 or n_clusters > len(points):
+        raise ValueError("Invalid n_clusters")
+
+    centroids = initialize_centroids(points, n_clusters)
+    assignments = assign_clusters(points, centroids)
+    kmeans_state["dataset"] = dataset
+    kmeans_state["n_clusters"] = n_clusters
+    kmeans_state["points"] = points
+    kmeans_state["history"] = [{"step": 0, "centroids": centroids, "assignments": assignments}]
+
+
+def run_one_iteration():
+    points = kmeans_state["points"]
+    n_clusters = kmeans_state["n_clusters"]
+    current = kmeans_state["history"][-1]
+
+    current_centroids = current["centroids"]
+    assignments_before = assign_clusters(points, current_centroids)
+    next_centroids = recompute_centroids(points, current_centroids, n_clusters, assignments_before)
+    assignments_after = assign_clusters(points, next_centroids)
+
+    next_entry = {
+        "step": current["step"] + 1,
+        "centroids": next_centroids,
+        "assignments": assignments_after,
+    }
+    kmeans_state["history"].append(next_entry)
+
+    converged = np.array_equal(assignments_before, assignments_after)
+    return next_entry, converged
+
+
 @app.route("/")
 def index():
     return render_template("index.html", datasets=datasets)
@@ -166,33 +203,19 @@ def step_forward():
     dataset = payload.get("dataset")
     n_clusters = int(payload.get("n_clusters", 2))
 
-    if kmeans_state["points"] is None or dataset != kmeans_state["dataset"] or n_clusters != kmeans_state["n_clusters"]:
-        # Re-initialize if user changed controls without clicking init.
-        points = load_dataset(dataset)
-        centroids = initialize_centroids(points, n_clusters)
-        assignments = assign_clusters(points, centroids)
-        kmeans_state["dataset"] = dataset
-        kmeans_state["n_clusters"] = n_clusters
-        kmeans_state["points"] = points
-        kmeans_state["history"] = [{"step": 0, "centroids": centroids, "assignments": assignments}]
+    if dataset not in datasets:
+        return jsonify(ok=False, error="Invalid dataset"), 400
 
-    points = kmeans_state["points"]
-    n_clusters = kmeans_state["n_clusters"]
-    current = kmeans_state["history"][-1]
+    try:
+        ensure_session(dataset, n_clusters)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
 
-    current_centroids = current["centroids"]
-    assignments = assign_clusters(points, current_centroids)
-    next_centroids = recompute_centroids(points, current_centroids, n_clusters, assignments)
+    _, converged = run_one_iteration()
 
-    kmeans_state["history"].append(
-        {
-            "step": current["step"] + 1,
-            "centroids": next_centroids,
-            "assignments": assignments,
-        }
-    )
-
-    return history_response()
+    base = history_response().get_json()
+    base["converged"] = converged
+    return jsonify(base)
 
 
 @app.route("/api/back", methods=["POST"])
@@ -214,44 +237,35 @@ def run_until_converged():
     payload = request.get_json(silent=True) or {}
     dataset = payload.get("dataset")
     n_clusters = int(payload.get("n_clusters", 2))
-    if kmeans_state["points"] is None or dataset != kmeans_state["dataset"] or n_clusters != kmeans_state["n_clusters"]:
-        points = load_dataset(dataset)
-        centroids = initialize_centroids(points, n_clusters)
-        assignments = assign_clusters(points, centroids)
-        kmeans_state["dataset"] = dataset
-        kmeans_state["n_clusters"] = n_clusters
-        kmeans_state["points"] = points
-        kmeans_state["history"] = [{"step": 0, "centroids": centroids, "assignments": assignments}]
 
-    points = kmeans_state["points"]
-    n_clusters = kmeans_state["n_clusters"]
+    if dataset not in datasets:
+        return jsonify(ok=False, error="Invalid dataset"), 400
+
+    try:
+        ensure_session(dataset, n_clusters)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+
     max_steps = 100
     steps = []
     converged = False
-    curr = kmeans_state["history"][-1]
-    while not converged and len(steps) < max_steps:
-        curr = kmeans_state["history"][-1]
-        current_centroids = curr["centroids"]
-        assignments = assign_clusters(points, current_centroids)
-        next_centroids = recompute_centroids(points, current_centroids, n_clusters, assignments)
-        next_assignments = assign_clusters(points, next_centroids)
-        next_step = curr["step"] + 1
-        entry = {"step": next_step, "centroids": next_centroids, "assignments": assignments}
-        kmeans_state["history"].append(entry)
+
+    for _ in range(max_steps):
+        entry, converged = run_one_iteration()
         steps.append(
             {
-                "step": next_step,
-                "centroids": next_centroids.tolist(),
-                "assignments": assignments.tolist(),
-
+                "step": entry["step"],
+                "centroids": entry["centroids"].tolist(),
+                "assignments": entry["assignments"].tolist(),
             }
         )
-        converged = np.array_equal(assignments, next_assignments)
-    x_range, y_range = x_y_ranges(points)
+        if converged:
+            break
+
     base = history_response().get_json()
     base["converged"] = converged
     base["steps"] = steps
-  
+
     return jsonify(base)
 
 
